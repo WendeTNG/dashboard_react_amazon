@@ -35,3 +35,4 @@ Desktop.ini
 # Arquivos locais do Codex
 .codex/
 .agents/
+.vercel/
