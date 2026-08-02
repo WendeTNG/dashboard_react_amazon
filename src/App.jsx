@@ -1,0 +1,72 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import * as echarts from 'echarts'
+import Papa from 'papaparse'
+import { BarChart3, ChevronDown, Download, LayoutDashboard, LoaderCircle, Menu, Package, ReceiptText, Users, Truck, X } from 'lucide-react'
+import dataUrl from '../Amazon_processados.csv?url'
+
+const pages = [
+  { id: 'overview', label: 'Visão geral', icon: LayoutDashboard },
+  { id: 'finance', label: 'Financeiro', icon: ReceiptText },
+  { id: 'products', label: 'Produtos', icon: Package },
+  { id: 'customers', label: 'Clientes', icon: Users },
+  { id: 'operations', label: 'Operação', icon: Truck },
+]
+const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+const number = new Intl.NumberFormat('pt-BR')
+const sum = (rows, key) => rows.reduce((acc, row) => acc + (+row[key] || 0), 0)
+const unique = (rows, key) => new Set(rows.map(row => row[key])).size
+const group = (rows, key, value = 'net_revenue') => Object.entries(rows.reduce((acc, row) => { const k = row[key] || 'Não informado'; acc[k] = (acc[k] || 0) + (+row[value] || 0); return acc }, {})).sort((a,b) => b[1] - a[1])
+const top = (rows, key, value, n = 10) => group(rows, key, value).slice(0, n)
+const statusColors = { Delivered: '#2db879', Pending: '#ff9900', Cancelled: '#e35d6a', Shipped: '#4d8af0' }
+
+function Chart({ option, className = '' }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const chart = echarts.init(ref.current)
+    chart.setOption(option)
+    const resize = () => chart.resize()
+    window.addEventListener('resize', resize)
+    return () => { window.removeEventListener('resize', resize); chart.dispose() }
+  }, [option])
+  return <div ref={ref} className={`chart ${className}`} />
+}
+
+function Kpi({ label, value, hint, accent = false }) {
+  return <div className={`kpi ${accent ? 'accent' : ''}`}><span>{label}</span><strong>{value}</strong>{hint && <small>{hint}</small>}</div>
+}
+
+function Bars({ data, horizontal = false, formatter = v => money.format(v) }) {
+  const labels = data.map(x => x[0]).reverse(), values = data.map(x => x[1]).reverse()
+  return <Chart option={{ grid: { left: horizontal ? 112 : 10, right: horizontal ? 72 : 18, top: 22, bottom: horizontal ? 10 : 52 }, tooltip: { trigger: 'axis', valueFormatter: formatter }, xAxis: horizontal ? { type:'value', axisLabel:{ color:'#8b95a7', formatter: v => formatter(v) }, splitLine:{ lineStyle:{ color:'#edf0f4' } } } : { type:'category', data:labels, axisLabel:{ color:'#758095', rotate:30 }, axisLine:{ lineStyle:{color:'#dfe4ea'} } }, yAxis: horizontal ? { type:'category', data:labels, axisLabel:{color:'#667085'}, axisLine:{show:false}, axisTick:{show:false} } : { type:'value', axisLabel:{ color:'#8b95a7', formatter: v => formatter(v) }, splitLine:{lineStyle:{color:'#edf0f4'}} }, series:[{ type:'bar', data:values, barMaxWidth:34, label:{show:true, position:horizontal?'right':'top', color:'#5b6678', fontSize:10, formatter:({value})=>formatter(value)}, itemStyle:{ color:'#ff9900', borderRadius:horizontal?[0,5,5,0]:[5,5,0,0] } }] }} />
+}
+
+function Panel({ title, sub, children, className='' }) { return <section className={`panel ${className}`}><div className="panel-head"><div><h3>{title}</h3>{sub && <p>{sub}</p>}</div><button className="more">•••</button></div>{children}</section> }
+
+function App() {
+  const [data, setData] = useState([]), [page, setPage] = useState('overview'), [open, setOpen] = useState(false)
+  const [filters, setFilters] = useState({ year:'Todos', country:'Todos', category:'Todos', payment:'Todos' })
+  useEffect(() => { Papa.parse(dataUrl, { download:true, header:true, skipEmptyLines:true, dynamicTyping:true, complete: r => setData(r.data) }) }, [])
+  const filtered = useMemo(() => data.filter(r => (filters.year === 'Todos' || String(r.year) === filters.year) && (filters.country === 'Todos' || r.country === filters.country) && (filters.category === 'Todos' || r.category === filters.category) && (filters.payment === 'Todos' || r.paymentmethod === filters.payment)), [data, filters])
+  const options = (key) => ['Todos', ...Array.from(new Set(data.map(x => String(x[key])))).filter(Boolean).sort()]
+  const update = (key, value) => setFilters(f => ({...f, [key]:value}))
+  if (!data.length) return <div className="loading"><LoaderCircle size={32}/><b>Preparando a inteligência de vendas</b><span>Processando a base Amazon…</span></div>
+  const title = pages.find(x=>x.id===page).label
+  return <div className="app">
+    <aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span>amazon</span><i>smile</i><small>SALES INTELLIGENCE</small></div><nav>{pages.map(p => { const Icon=p.icon; return <button key={p.id} onClick={()=>{setPage(p.id);setOpen(false)}} className={page===p.id?'active':''}><Icon size={19}/>{p.label}</button> })}</nav><div className="side-note"><BarChart3 size={18}/><span>Dados atualizados<br/><b>Amazon Processados</b></span></div></aside>
+    {open && <div className="overlay" onClick={()=>setOpen(false)}/>}<main><header><button className="mobile-menu" onClick={()=>setOpen(true)}><Menu/></button><div><p>ANÁLISE DE E-COMMERCE</p><h1>{title}</h1></div><button className="export"><Download size={17}/> Exportar</button></header>
+      <div className="filters">{[['year','Ano'],['country','País'],['category','Categoria'],['payment','Pagamento']].map(([key,label])=><label key={key}>{label}<span><select value={filters[key]} onChange={e=>update(key,e.target.value)}>{options(key==='payment'?'paymentmethod':key).map(v=><option key={v}>{v}</option>)}</select><ChevronDown size={15}/></span></label>)}<button onClick={()=>setFilters({year:'Todos',country:'Todos',category:'Todos',payment:'Todos'})} className="clear">Limpar filtros</button></div>
+      {page === 'overview' && <Overview rows={filtered}/>} {page === 'finance' && <Finance rows={filtered}/>} {page === 'products' && <Products rows={filtered}/>} {page === 'customers' && <Customers rows={filtered}/>} {page === 'operations' && <Operations rows={filtered}/>} 
+    </main></div>
+}
+
+function Overview({rows}) { const revenue=sum(rows,'net_revenue'), orders=unique(rows,'orderid'), monthly=group(rows,'year_month').sort((a,b)=>a[0].localeCompare(b[0])), status=group(rows,'orderstatus','quantity'); return <><div className="kpis"><Kpi label="Receita total" value={money.format(revenue)} hint="Receita líquida" accent/><Kpi label="Pedidos" value={number.format(orders)} hint="Pedidos únicos"/><Kpi label="Clientes únicos" value={number.format(unique(rows,'customerid'))} hint="Base ativa"/><Kpi label="Ticket médio" value={money.format(orders?revenue/orders:0)} hint="Por pedido"/><Kpi label="Quantidade vendida" value={number.format(sum(rows,'quantity'))} hint="Itens comercializados"/></div><div className="grid overview-grid"><Panel title="Receita ao longo do tempo" sub="Evolução mensal da receita líquida" className="wide"><Chart option={{ tooltip:{trigger:'axis',valueFormatter:v=>money.format(v)}, grid:{left:60,right:22,top:28,bottom:40}, xAxis:{type:'category',data:monthly.map(x=>x[0]),axisLabel:{color:'#748095',rotate:35},axisLine:{lineStyle:{color:'#e4e8ed'}}},yAxis:{type:'value',axisLabel:{color:'#748095',formatter:v=>'$'+(v/1000)+'k'},splitLine:{lineStyle:{color:'#eef1f4'}}},series:[{type:'line',data:monthly.map(x=>x[1]),smooth:true,symbol:'circle',symbolSize:5,label:{show:true,position:'top',fontSize:9,color:'#a55e00',formatter:({value})=>money.format(value)},lineStyle:{width:3,color:'#ff9900'},areaStyle:{color:'rgba(255,153,0,.14)'}}]}} /></Panel><Panel title="Pedidos por status" sub="Volume por situação"><Chart option={{tooltip:{trigger:'item'},legend:{bottom:0,textStyle:{color:'#677287'}},series:[{type:'pie',radius:['52%','76%'],center:['50%','44%'],label:{show:true,formatter:'{b}\n{c} ({d}%)',fontSize:10},data:status.map(x=>({name:x[0],value:x[1],itemStyle:{color:statusColors[x[0]]||'#718096'}}))}]}}/></Panel><Panel title="Receita por categoria" sub="Top categorias"><Bars horizontal data={top(rows,'category','net_revenue',6)}/></Panel><Panel title="Receita por país" sub="Mercados com maior faturamento"><Bars horizontal data={top(rows,'country','net_revenue',6)}/></Panel><Panel title="Top 10 marcas" sub="Por receita líquida" className="wide"><Bars data={top(rows,'brand','net_revenue',10)}/></Panel></div></> }
+
+function Finance({rows}) { const gross=sum(rows,'gross_amount'), disc=sum(rows,'discount_amount'), tax=sum(rows,'tax'), ship=sum(rows,'shippingcost'), net=sum(rows,'net_revenue'), orders=unique(rows,'orderid'); const waterfall=[gross,-disc,-tax,-ship,net]; return <><div className="kpis"><Kpi label="Receita líquida" value={money.format(net)} accent/><Kpi label="Frete" value={money.format(ship)}/><Kpi label="Impostos" value={money.format(tax)}/><Kpi label="Descontos" value={money.format(disc)}/><Kpi label="Ticket médio" value={money.format(net/(orders||1))}/></div><div className="grid"><Panel title="Receita por categoria"><Bars horizontal data={top(rows,'category','net_revenue',8)}/></Panel><Panel title="Receita por marca"><Bars horizontal data={top(rows,'brand','net_revenue',8)}/></Panel><Panel title="Receita por pagamento"><Bars data={top(rows,'paymentmethod','net_revenue',7)}/></Panel><Panel title="Composição da receita" sub="Bruto até receita líquida"><Chart option={{grid:{left:52,right:18,top:34,bottom:32},tooltip:{trigger:'axis',valueFormatter:v=>money.format(Math.abs(v))},xAxis:{type:'category',data:['Bruta','Desconto','Impostos','Frete','Líquida'],axisLabel:{color:'#748095'}},yAxis:{type:'value',axisLabel:{color:'#748095',formatter:v=>'$'+(v/1000)+'k'},splitLine:{lineStyle:{color:'#edf0f4'}}},series:[{type:'bar',data:waterfall.map((v,i)=>({value:v,itemStyle:{color:i===4?'#2db879':v<0?'#e35d6a':'#ff9900'}})),barMaxWidth:45,label:{show:true,position:'top',fontSize:9,color:'#5b6678',formatter:({value})=>money.format(Math.abs(value))}}]}}/></Panel></div></> }
+
+function Products({rows}) { const champion=top(rows,'productname','quantity',1)[0]; return <><div className="kpis"><Kpi label="Produtos vendidos" value={number.format(sum(rows,'quantity'))} accent/><Kpi label="Categorias" value={number.format(unique(rows,'category'))}/><Kpi label="Marcas" value={number.format(unique(rows,'brand'))}/><Kpi label="Produto campeão" value={champion?.[0]||'—'} hint={`${number.format(champion?.[1]||0)} unidades`}/></div><div className="grid"><Panel title="Top 10 produtos" className="wide"><Bars horizontal data={top(rows,'productname','quantity',10)} formatter={number.format}/></Panel><Panel title="Categorias mais vendidas"><Bars data={top(rows,'category','quantity',8)} formatter={number.format}/></Panel><Panel title="Marcas por receita"><Bars horizontal data={top(rows,'brand','net_revenue',8)}/></Panel><Panel title="Mix por categoria" sub="Receita líquida"><Chart option={{tooltip:{trigger:'item',valueFormatter:v=>money.format(v)},series:[{type:'treemap',data:top(rows,'category','net_revenue',10).map(x=>({name:x[0],value:x[1]})),label:{formatter:'{b}',color:'#fff'},breadcrumb:{show:false},color:['#ff9900','#232f3e','#4c88c7','#2db879','#e35d6a','#845ec2']}]}}/></Panel></div></> }
+
+function Customers({rows}) { const customers=unique(rows,'customerid'), orders=unique(rows,'orderid'), champ=top(rows,'customername','net_revenue',1)[0]; return <><div className="kpis"><Kpi label="Clientes" value={number.format(customers)} accent/><Kpi label="Ticket médio" value={money.format(sum(rows,'net_revenue')/(orders||1))}/><Kpi label="Pedidos por cliente" value={(orders/(customers||1)).toFixed(1)}/><Kpi label="Cliente campeão" value={champ?.[0]||'—'} hint={money.format(champ?.[1]||0)}/></div><div className="grid"><Panel title="Top 15 clientes" className="wide"><Bars horizontal data={top(rows,'customername','net_revenue',15)}/></Panel><Panel title="Clientes por país"><Bars data={top(rows,'country','customerid',7).map(([k])=>[k,unique(rows.filter(r=>r.country===k),'customerid')])} formatter={number.format}/></Panel><Panel title="Forma de pagamento preferida"><Bars horizontal data={top(rows,'paymentmethod','quantity',8)} formatter={number.format}/></Panel><Panel title="Status dos pedidos"><Chart option={{tooltip:{trigger:'item'},series:[{type:'pie',radius:['42%','72%'],label:{show:true,formatter:'{b}\n{c} ({d}%)',fontSize:10},data:group(rows,'orderstatus','quantity').map(x=>({name:x[0],value:x[1],itemStyle:{color:statusColors[x[0]]}}))}]}}/></Panel></div></> }
+
+function Operations({rows}) { const all=unique(rows,'orderid'), delivered=unique(rows.filter(r=>r.orderstatus==='Delivered'),'orderid'), pending=unique(rows.filter(r=>r.orderstatus==='Pending'),'orderid'), canceled=unique(rows.filter(r=>r.orderstatus==='Cancelled'),'orderid'), timeline=group(rows,'year_month','quantity').sort((a,b)=>a[0].localeCompare(b[0])); return <><div className="kpis"><Kpi label="Pedidos entregues" value={number.format(delivered)} accent/><Kpi label="Pendentes" value={number.format(pending)}/><Kpi label="Cancelados" value={number.format(canceled)}/><Kpi label="Taxa de entrega" value={`${((delivered/(all||1))*100).toFixed(1)}%`}/></div><div className="grid"><Panel title="Pedidos por status"><Bars data={group(rows,'orderstatus','quantity')} formatter={number.format}/></Panel><Panel title="Pedidos por pagamento"><Bars horizontal data={top(rows,'paymentmethod','quantity',8)} formatter={number.format}/></Panel><Panel title="Pedidos por país"><Bars horizontal data={top(rows,'country','quantity',8)} formatter={number.format}/></Panel><Panel title="Pedidos ao longo do tempo" className="wide"><Chart option={{tooltip:{trigger:'axis'},grid:{left:45,right:20,top:28,bottom:38},xAxis:{type:'category',data:timeline.map(x=>x[0]),axisLabel:{rotate:35,color:'#748095'}},yAxis:{type:'value',splitLine:{lineStyle:{color:'#edf0f4'}}},series:[{type:'line',data:timeline.map(x=>x[1]),smooth:true,areaStyle:{color:'rgba(45,184,121,.12)'},lineStyle:{color:'#2db879',width:3},symbol:'circle',symbolSize:5,label:{show:true,position:'top',fontSize:9,color:'#237e55',formatter:({value})=>number.format(value)}}]}}/></Panel></div></> }
+
+export default App
